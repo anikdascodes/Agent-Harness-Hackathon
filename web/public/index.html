@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DataForge AI — Autonomous Data Science Partner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="logo-icon">
+          <i data-lucide="sparkles"></i>
+        </div>
+        <div class="brand-text">
+          <h1>DataForge <span>AI</span></h1>
+          <p>Autonomous Data Science Partner & Executive Consultant</p>
+        </div>
+      </div>
+      <div class="harness-badges">
+        <span class="badge badge-success"><i data-lucide="shield-check"></i> TrueForge Harness v0.1.4</span>
+        <span class="badge badge-primary"><i data-lucide="box"></i> Python Sandbox Active</span>
+        <span class="badge badge-warning"><i data-lucide="user-check"></i> Human-in-the-Loop Gates Enabled</span>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="workspace">
+      <!-- Left Sidebar: Controls & Scoping -->
+      <aside class="sidebar">
+        <div class="panel-section">
+          <h2><i data-lucide="database"></i> 1. Select Dataset</h2>
+          <div class="form-group">
+            <select id="datasetSelect" class="input-select">
+              <option value="" disabled selected>Choose a dataset...</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <h2><i data-lucide="target"></i> 2. Business Objective</h2>
+          <div class="form-group">
+            <textarea id="businessGoalInput" class="input-textarea" rows="3" placeholder="e.g. Identify why customers are churning and predict high-risk accounts before they cancel.">Identify drivers of customer churn and build a predictive model to alert CSMs on high-risk accounts.</textarea>
+          </div>
+          <div class="quick-prompts">
+            <button class="btn-chip" onclick="setPreset('churn')">📊 SaaS Churn</button>
+            <button class="btn-chip" onclick="setPreset('sales')">📈 Retail Forecast</button>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <h2><i data-lucide="list-ordered"></i> Consultation Roadmap</h2>
+          <ul class="stepper">
+            <li id="step1" class="step-item active">
+              <span class="step-circle">1</span>
+              <div class="step-info">
+                <strong>Intake & Plan</strong>
+                <small>Metadata & Plan Gate</small>
+              </div>
+            </li>
+            <li id="step2" class="step-item">
+              <span class="step-circle">2</span>
+              <div class="step-info">
+                <strong>Sandboxed EDA</strong>
+                <small>Auto-Plot Generation</small>
+              </div>
+            </li>
+            <li id="step3" class="step-item">
+              <span class="step-circle">3</span>
+              <div class="step-info">
+                <strong>Constructive Pushback</strong>
+                <small>AEO Consultation Gate</small>
+              </div>
+            </li>
+            <li id="step4" class="step-item">
+              <span class="step-circle">4</span>
+              <div class="step-info">
+                <strong>AutoML Benchmark</strong>
+                <small>4 Models & Feature Ranking</small>
+              </div>
+            </li>
+            <li id="step5" class="step-item">
+              <span class="step-circle">5</span>
+              <div class="step-info">
+                <strong>Executive Brief</strong>
+                <small>30s Summary & Actions</small>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <div class="panel-actions">
+          <button id="startBtn" class="btn btn-primary btn-block">
+            <i data-lucide="play"></i> Start Autonomous Consultation
+          </button>
+        </div>
+      </aside>
+
+      <!-- Center & Right: Interactive Timeline & Artifacts -->
+      <main class="main-content">
+        <div id="timeline" class="timeline-container">
+          <!-- Initial Welcome Card -->
+          <div class="card agent-card">
+            <div class="card-header">
+              <div class="avatar"><i data-lucide="bot"></i></div>
+              <div>
+                <h3>DataForge AI Consultant</h3>
+                <span class="timestamp">Ready to assist</span>
+              </div>
+            </div>
+            <div class="card-body">
+              <p>Welcome! I am your AI Data Science Partner. Select a dataset on the left and define your business goal. I will inspect the data structure, propose a comprehensive analysis plan, execute code safely inside the TrueForge sandbox, and provide an executive-ready brief with plain-English insights.</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

@@ -6,7 +6,8 @@
   "scripts": {
     "build": "cd mcp-servers/dataforge-tools && npm run build",
     "test": ".venv/bin/pytest tests/ && node tests/test_mcp_integration.mjs",
-    "start:mcp": "node mcp-servers/dataforge-tools/dist/index.js"
+    "start:mcp": "node mcp-servers/dataforge-tools/dist/index.js",
+    "start:web": "node web/server.js"
   },
   "keywords": ["ai-agents", "trueforge", "mcp", "data-science", "sandbox", "qodo", "hackathon"],
   "author": "Anik Das",
