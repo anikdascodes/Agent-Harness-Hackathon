@@ -660,7 +660,7 @@ function buildRecommendations() {
 
   return topFeats.map((f, idx) => ({
     action: `Investigate and act on driver: "${f.feature}" (importance: ${f.importance}).`,
-    expectedImpact: `Addresses #${idx + 1} ranked predictive factor for ${escapeHtml(currentTargetColumn)}`,
+    expectedImpact: `Addresses #${idx + 1} ranked predictive factor for ${currentTargetColumn}`,
     priority: idx === 0 ? "HIGH" : "MEDIUM"
   }));
 }
