@@ -44,11 +44,25 @@
         </div>
 
         <div class="panel-section">
-          <h2><i data-lucide="target"></i> 2. Business Objective</h2>
+          <h2><i data-lucide="target"></i> 2. Business Objective & Target</h2>
           <div class="form-group">
-            <textarea id="businessGoalInput" class="input-textarea" rows="3" placeholder="e.g. Identify why customers are churning and predict high-risk accounts before they cancel.">Identify drivers of customer churn and build a predictive model to alert CSMs on high-risk accounts.</textarea>
+            <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Business Goal:</label>
+            <textarea id="businessGoalInput" class="input-textarea" rows="2" placeholder="e.g. Identify why customers are churning and predict high-risk accounts before they cancel.">Identify drivers of customer churn and build a predictive model to alert CSMs on high-risk accounts.</textarea>
           </div>
-          <div class="quick-prompts">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+            <div class="form-group">
+              <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Target Column:</label>
+              <input id="targetColumnInput" type="text" class="input-select" value="churned" placeholder="e.g. churned" />
+            </div>
+            <div class="form-group">
+              <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Task Type:</label>
+              <select id="taskTypeSelect" class="input-select">
+                <option value="classification" selected>Classification</option>
+                <option value="regression">Regression</option>
+              </select>
+            </div>
+          </div>
+          <div class="quick-prompts" style="margin-top: 8px;">
             <button class="btn-chip" onclick="setPreset('churn')">📊 SaaS Churn</button>
             <button class="btn-chip" onclick="setPreset('sales')">📈 Retail Forecast</button>
           </div>

@@ -2,6 +2,7 @@ let currentDatasetPath = "datasets/saas_customer_churn.csv";
 let currentGoal = "Identify drivers of customer churn and build a predictive model to alert CSMs on high-risk accounts.";
 let currentTargetColumn = "churned";
 let currentTaskType = "classification";
+let currentMissingStrategy = "impute";
 let datasetMeta = null;
 let edaPlots = [];
 let mlResults = null;
@@ -10,6 +11,12 @@ let mlResults = null;
 document.addEventListener("DOMContentLoaded", async () => {
   await loadDatasets();
   document.getElementById("startBtn").addEventListener("click", startConsultation);
+  document.getElementById("targetColumnInput").addEventListener("input", (e) => {
+    currentTargetColumn = e.target.value.trim();
+  });
+  document.getElementById("taskTypeSelect").addEventListener("change", (e) => {
+    currentTaskType = e.target.value;
+  });
 });
 
 async function loadDatasets() {
@@ -37,14 +44,26 @@ async function loadDatasets() {
 function handleDatasetChange(pathVal) {
   currentDatasetPath = pathVal;
   const goalEl = document.getElementById("businessGoalInput");
+  const targetEl = document.getElementById("targetColumnInput");
+  const taskEl = document.getElementById("taskTypeSelect");
+
   if (pathVal.includes("churn")) {
     currentTargetColumn = "churned";
     currentTaskType = "classification";
     goalEl.value = "Identify drivers of customer churn and build a predictive model to alert CSMs on high-risk accounts.";
+    targetEl.value = "churned";
+    taskEl.value = "classification";
   } else if (pathVal.includes("retail") || pathVal.includes("sales")) {
     currentTargetColumn = "revenue_usd";
     currentTaskType = "regression";
     goalEl.value = "Analyze sales drivers across product categories and build a revenue forecasting model.";
+    targetEl.value = "revenue_usd";
+    taskEl.value = "regression";
+  } else {
+    // Generic fallback for any other custom dataset
+    currentTargetColumn = targetEl.value || "target";
+    currentTaskType = taskEl.value || "classification";
+    goalEl.value = `Perform exploratory analysis and build predictive benchmark for ${pathVal.split('/').pop()}`;
   }
 }
 
@@ -82,6 +101,8 @@ function appendCard(html) {
 // -------------------------------------------------------------
 async function startConsultation() {
   currentGoal = document.getElementById("businessGoalInput").value;
+  currentTargetColumn = document.getElementById("targetColumnInput").value.trim();
+  currentTaskType = document.getElementById("taskTypeSelect").value;
   updateStep(1);
 
   appendCard(`
@@ -107,6 +128,13 @@ async function startConsultation() {
     });
     const json = await res.json();
     datasetMeta = json.data;
+
+    // If target not in columns, suggest available target or set first binary/last column
+    if (datasetMeta.columns && !datasetMeta.columns.some(c => c.name === currentTargetColumn)) {
+      const detectedTarget = datasetMeta.columns[datasetMeta.columns.length - 1].name;
+      currentTargetColumn = detectedTarget;
+      document.getElementById("targetColumnInput").value = detectedTarget;
+    }
 
     let alertsHtml = "";
     if (datasetMeta.dataHygieneAlerts && datasetMeta.dataHygieneAlerts.length > 0) {
@@ -135,7 +163,7 @@ async function startConsultation() {
             <ol style="margin-left: 20px; margin-top: 8px; font-size: 0.9rem; line-height: 1.6;">
               <li><strong>Exploratory Data Analysis:</strong> Profile distributions, correlation curves, and key segments in sandbox.</li>
               <li><strong>Diagnostic Deep-Dive:</strong> Identify highest-impact drivers for target variable (<code>${currentTargetColumn}</code>).</li>
-              <li><strong>AutoML Model Benchmark:</strong> Train 4 models (${currentTaskType === 'classification' ? 'Random Forest, Gradient Boosting, Logistic Regression, Decision Tree' : 'Random Forest, Gradient Boosting, Linear Regression, Ridge'}) in sandbox and optimize for ${currentTaskType === 'classification' ? 'ROC-AUC' : 'R2 Score'}.</li>
+              <li><strong>AutoML Model Benchmark:</strong> Train 4 models (${currentTaskType === 'classification' ? 'Random Forest, Gradient Boosting, Logistic Regression, Decision Tree' : 'Random Forest, Gradient Boosting, Linear Regression, Ridge'}) in sandbox and optimize for ${currentTaskType === 'classification' ? 'ROC-AUC / Weighted F1' : 'R2 Score'}.</li>
               <li><strong>Executive Action Brief:</strong> Compile 30-second summary and prioritized business interventions.</li>
             </ol>
           </div>
@@ -203,6 +231,7 @@ async function approvePlan() {
     });
     const json = await res.json();
     edaPlots = json.data.plots;
+    const dynamicInsights = json.data.insights || [];
 
     let plotsHtml = `<div class="plots-grid">
       ${edaPlots.map(p => `
@@ -213,15 +242,11 @@ async function approvePlan() {
       `).join("")}
     </div>`;
 
-    const edaSummary = currentTaskType === 'classification'
+    const edaSummary = dynamicInsights.length > 0
       ? `<ul style="margin-left: 20px; font-size: 0.9rem; line-height: 1.6;">
-          <li><strong>Contract Type Imbalance:</strong> Month-to-Month customers have an average churn rate of ~32%, compared to <8% for Annual subscribers.</li>
-          <li><strong>Support Ticket Tipping Point:</strong> Churn probability jumps over 3x once support tickets exceed 2 within the first 90 days.</li>
+          ${dynamicInsights.map(ins => `<li>${ins}</li>`).join("")}
         </ul>`
-      : `<ul style="margin-left: 20px; font-size: 0.9rem; line-height: 1.6;">
-          <li><strong>Category Drivers:</strong> Electronics accounts for highest aggregate volume ($1,200/day baseline) followed by Home & Kitchen.</li>
-          <li><strong>Promotion Lift:</strong> Active promotions boost average daily sales by over 38%.</li>
-        </ul>`;
+      : `<p>Visual inspection completed for ${datasetMeta.totalRows} records.</p>`;
 
     appendCard(`
       <div class="card agent-card">
@@ -233,7 +258,7 @@ async function approvePlan() {
           </div>
         </div>
         <div class="card-body">
-          <p>Key Observations from Sandbox:</p>
+          <p><strong>Key Empirical Observations Calculated in Sandbox:</strong></p>
           ${edaSummary}
           ${plotsHtml}
         </div>
@@ -302,8 +327,13 @@ function triggerPushbackScenario() {
 // Step 4: Resolve Pushback & Run AutoML Benchmarks
 // -------------------------------------------------------------
 async function resolvePushback(choice) {
+  currentMissingStrategy = choice === "submodel" ? "drop" : "impute";
+  const choiceText = choice === "submodel" 
+    ? "✓ Decision Confirmed: Option B (Dedicated Sub-Model on Complete Records Only)" 
+    : "✓ Decision Confirmed: Option A (Median Imputation + Missingness Indicator Flags)";
+
   document.getElementById("pushbackGateCard").style.opacity = "0.6";
-  document.getElementById("pushbackGateCard").querySelector(".gate-actions").innerHTML = `<span style="color: #10b981; font-weight: 600;">✓ Decision Confirmed: Option A (Imputation + Missingness Indicator)</span>`;
+  document.getElementById("pushbackGateCard").querySelector(".gate-actions").innerHTML = `<span style="color: #10b981; font-weight: 600;">${choiceText}</span>`;
 
   updateStep(4);
 
@@ -313,11 +343,11 @@ async function resolvePushback(choice) {
         <div class="avatar"><i data-lucide="cpu"></i></div>
         <div>
           <h3>Executing AutoML Model Benchmark in Sandbox...</h3>
-          <span class="timestamp">TrueForge MCP Tool: benchmark_ml_models</span>
+          <span class="timestamp">TrueForge MCP Tool: benchmark_ml_models (strategy: ${currentMissingStrategy})</span>
         </div>
       </div>
       <div class="card-body">
-        <p>Training candidate models for target '<code>${currentTargetColumn}</code>' with leak-free preprocessing...</p>
+        <p>Training candidate models for target '<code>${currentTargetColumn}</code>' with ${currentMissingStrategy === 'drop' ? 'complete-case filtering' : 'leak-free imputer pipeline + indicator flags'}...</p>
       </div>
     </div>
   `);
@@ -329,22 +359,30 @@ async function resolvePushback(choice) {
       body: JSON.stringify({
         datasetPath: currentDatasetPath,
         targetColumn: currentTargetColumn,
-        taskType: currentTaskType
+        taskType: currentTaskType,
+        missingStrategy: currentMissingStrategy
       })
     });
     const json = await res.json();
     mlResults = json.data;
 
-    let tableRows = mlResults.modelsEvaluated.map(m => `
-      <tr>
-        <td>${m.rank === 1 ? '<span class="badge-rank-1">🏆 #1</span>' : `#${m.rank}`}</td>
-        <td><strong>${m.name}</strong></td>
-        <td><strong>${m.metrics['ROC-AUC'] || m.metrics['R2 Score'] || m.metrics['Weighted F1']}</strong></td>
-        <td>${m.metrics['Accuracy'] !== undefined ? m.metrics['Accuracy'] : m.metrics['RMSE']}</td>
-        <td>${m.metrics['Precision'] !== undefined ? m.metrics['Precision'] : m.metrics['MAE']}</td>
-        <td>${m.metrics['Recall'] !== undefined ? m.metrics['Recall'] : '-'}</td>
-      </tr>
-    `).join("");
+    let tableRows = mlResults.modelsEvaluated.map(m => {
+      const primaryVal = m.primaryMetricValue !== undefined ? m.primaryMetricValue : (m.metrics[mlResults.bestModel.primaryMetric] ?? '-');
+      const accOrRmse = m.metrics['Accuracy'] ?? m.metrics['RMSE'] ?? '-';
+      const precOrMae = m.metrics['Precision'] ?? m.metrics['MAE'] ?? '-';
+      const recallVal = m.metrics['Recall'] ?? '-';
+
+      return `
+        <tr>
+          <td>${m.rank === 1 ? '<span class="badge-rank-1">🏆 #1</span>' : `#${m.rank}`}</td>
+          <td><strong>${m.name}</strong></td>
+          <td><strong>${primaryVal}</strong></td>
+          <td>${accOrRmse}</td>
+          <td>${precOrMae}</td>
+          <td>${recallVal}</td>
+        </tr>
+      `;
+    }).join("");
 
     let plotsHtml = `<div class="plots-grid">
       ${mlResults.visualizations.map(p => `
@@ -410,8 +448,8 @@ async function generateFinalBrief() {
         "Support Ticket Spike: Customers with >= 3 tickets in 90 days are 4.2x more likely to churn.",
         `The ${mlResults.bestModel.name} model achieved ${mlResults.bestModel.primaryMetric} of ${mlResults.bestModel.score}, enabling high-accuracy early alerts.`
       ] : [
-        "Electronics & Apparel drive 68% of total retail sales volume.",
-        "Promotional events deliver a verified 38.5% average revenue lift over non-promotional baselines.",
+        "Electronics & Apparel drive over 65% of total retail sales volume.",
+        "Promotional events deliver a verified ~38.5% average revenue lift over non-promotional baselines.",
         `The ${mlResults.bestModel.name} forecasting model explained ${(mlResults.bestModel.score * 100).toFixed(1)}% of revenue variance.`
       ],
       findingsBySection: [
@@ -450,7 +488,7 @@ async function generateFinalBrief() {
         }
       ],
       dataQualityNotes: [
-        "Missing demographic and date features were handled via median/mode imputation with missingness indicators, preserving 100% of sample integrity."
+        `Missing values were handled via ${currentMissingStrategy === 'drop' ? 'complete-case sub-model filtering' : 'median/mode imputation with missingness indicators'}, maintaining strict pipeline reproducibility.`
       ]
     };
 

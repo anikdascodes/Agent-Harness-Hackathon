@@ -86,6 +86,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               enum: ["classification", "regression"],
               description: "Whether the task is classification or regression (default: classification)",
             },
+            missingStrategy: {
+              type: "string",
+              enum: ["impute", "drop"],
+              description: "How to handle missing values: 'impute' (median/mode + indicator flags) or 'drop' (submodel on complete rows only). Default: 'impute'",
+            },
           },
           required: ["datasetPath", "targetColumn"],
         },
@@ -99,12 +104,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             businessGoal: {
               type: "string",
-              description: "High-level goal or problem statement.",
+              description: "The primary business goal (e.g. 'Reduce customer churn by 15%')",
             },
             keyTakeaways: {
               type: "array",
               items: { type: "string" },
-              description: "Top 2-4 bullet points for the 30-second summary.",
+              description: "3-4 concise high-level executive takeaways",
             },
             findingsBySection: {
               type: "array",
@@ -117,7 +122,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 },
                 required: ["title", "description"],
               },
-              description: "Detailed findings grouped by section.",
             },
             prescriptiveRecommendations: {
               type: "array",
@@ -130,12 +134,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 },
                 required: ["action", "expectedImpact", "priority"],
               },
-              description: "Actionable next steps with business impact.",
             },
             dataQualityNotes: {
               type: "array",
               items: { type: "string" },
-              description: "Caveats, sample limitations, or data integrity notes.",
+              description: "Optional methodology or data quality remarks",
             },
           },
           required: ["businessGoal", "keyTakeaways", "findingsBySection", "prescriptiveRecommendations"],
@@ -182,7 +185,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const absDatasetPath = path.isAbsolute(datasetPath) ? datasetPath : path.join(REPO_ROOT, datasetPath);
       const targetColumn = String(args?.targetColumn);
       const taskType = (args?.taskType as "classification" | "regression") || "classification";
-      const result = await benchmarkMLModels(absDatasetPath, targetColumn, taskType, REPO_ROOT);
+      const missingStrategy = (args?.missingStrategy as "impute" | "drop") || "impute";
+      const result = await benchmarkMLModels(absDatasetPath, targetColumn, taskType, REPO_ROOT, missingStrategy);
       return {
         content: [
           {

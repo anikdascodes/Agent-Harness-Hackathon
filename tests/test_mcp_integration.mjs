@@ -41,13 +41,17 @@ print("PROCESSED_ROWS=" + str(len(df)))
   assert(pyRes.plots.length >= 1, "Should capture at least 1 plot");
   console.log(`✅ runPythonInSandbox passed: captured plot ${pyRes.plots[0].filename} in ${pyRes.execution_duration_seconds}s.\n`);
 
-  // 3. Test ML Model Benchmarking
+  // 3. Test ML Model Benchmarking (Option A: Imputation + Indicator, Option B: Sub-model Drop)
   console.log("3️⃣ Testing benchmarkMLModels()...");
-  const mlRes = await benchmarkMLModels(churnDataset, "churned", "classification", REPO_ROOT);
+  const mlRes = await benchmarkMLModels(churnDataset, "churned", "classification", REPO_ROOT, "impute");
   assert(mlRes.modelsEvaluated.length === 4, "Expected 4 models evaluated");
   assert(mlRes.bestModel.name !== "", "Expected best model selected");
   assert(mlRes.topFeatures.length > 0, "Expected top features extracted");
-  console.log(`✅ benchmarkMLModels passed: Best Model = ${mlRes.bestModel.name} (${mlRes.bestModel.primaryMetric}: ${mlRes.bestModel.score}), Top Feature = ${mlRes.topFeatures[0].feature}.\n`);
+  console.log(`✅ benchmarkMLModels (impute) passed: Best Model = ${mlRes.bestModel.name} (${mlRes.bestModel.primaryMetric}: ${mlRes.bestModel.score}), Top Feature = ${mlRes.topFeatures[0].feature}.`);
+
+  const mlDropRes = await benchmarkMLModels(churnDataset, "churned", "classification", REPO_ROOT, "drop");
+  assert(mlDropRes.modelsEvaluated.length === 4, "Expected 4 models evaluated for drop submodel");
+  console.log(`✅ benchmarkMLModels (drop submodel) passed: Best Model = ${mlDropRes.bestModel.name} (${mlDropRes.bestModel.primaryMetric}: ${mlDropRes.bestModel.score}).\n`);
 
   // 4. Test Executive Brief Generator
   console.log("4️⃣ Testing generateExecutiveBrief()...");
