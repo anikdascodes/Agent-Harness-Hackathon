@@ -5,9 +5,9 @@
   "description": "DataForge AI - Autonomous AI Data Science Employee built on TrueForge Agent Harness",
   "scripts": {
     "build": "cd mcp-servers/dataforge-tools && npm run build",
-    "test": ".venv/bin/pytest tests/ && node tests/test_mcp_integration.mjs",
-    "start:mcp": "node mcp-servers/dataforge-tools/dist/index.js",
-    "start:web": "node web/server.js"
+    "test": "npm run build && .venv/bin/pytest tests/ && node tests/test_mcp_integration.mjs",
+    "start:mcp": "npm run build && node mcp-servers/dataforge-tools/dist/index.js",
+    "start:web": "npm run build && node web/server.js"
   },
   "keywords": ["ai-agents", "trueforge", "mcp", "data-science", "sandbox", "qodo", "hackathon"],
   "author": "Anik Das",

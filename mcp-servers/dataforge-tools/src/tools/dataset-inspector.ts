@@ -26,12 +26,14 @@ export async function inspectDataset(
   filePath: string,
   repoRoot: string
 ): Promise<DatasetInspectionResult> {
+  const safeFilePathLiteral = JSON.stringify(filePath);
+
   const pythonScript = `
 import json
 import pandas as pd
 import numpy as np
 
-file_path = "${filePath}"
+file_path = ${safeFilePathLiteral}
 df = pd.read_csv(file_path)
 
 total_rows, total_cols = df.shape

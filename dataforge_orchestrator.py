@@ -42,7 +42,7 @@ import json
 import pandas as pd
 import numpy as np
 
-df = pd.read_csv('{self.dataset_path}')
+df = pd.read_csv({self.dataset_path!r})
 rows, cols = df.shape
 missing = df.isnull().sum()
 alerts = []
@@ -54,8 +54,11 @@ for c in df.columns:
 print("__META__" + json.dumps({{"rows": rows, "cols": cols, "columns": list(df.columns), "alerts": alerts}}) + "__META__")
 """
         res = execute_code(code)
-        match = res["stdout"].split("__META__")[1]
-        self.session_state["dataset_meta"] = json.loads(match)
+        if not res["success"] or "__META__" not in res["stdout"]:
+            raise RuntimeError(f"Dataset inspection failed: {res.get('error')}\n{res.get('stderr')}")
+
+        _, payload, _ = res["stdout"].split("__META__", 2)
+        self.session_state["dataset_meta"] = json.loads(payload)
         return self.session_state["dataset_meta"]
 
     def propose_plan(self) -> str:
@@ -89,7 +92,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 sns.set_theme(style="whitegrid", palette="tab10")
-df = pd.read_csv('{self.dataset_path}')
+df = pd.read_csv({self.dataset_path!r})
 
 # 1. Churn by Contract Type
 plt.figure(figsize=(7, 4.5))
@@ -118,6 +121,8 @@ plt.tight_layout()
 plt.show()
 """
         res = execute_code(code)
+        if not res["success"]:
+            raise RuntimeError(f"EDA execution failed: {res.get('error')}\n{res.get('stderr')}")
         self.session_state["generated_plots"].extend(res["plots"])
         return res["plots"]
 
@@ -159,7 +164,7 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 
-df = pd.read_csv('{self.dataset_path}')
+df = pd.read_csv({self.dataset_path!r})
 target = 'churned'
 X = df.drop(columns=[target, 'customer_id'])
 y = df[target]
@@ -193,7 +198,7 @@ for name, model in models.items():
 
 results.sort(key=lambda x: x["ROC-AUC"], reverse=True)
 
-# Top Feature Importance from Best Model (Random Forest / Gradient Boosting)
+# Top Feature Importance from Best Model
 rf_pipe = Pipeline([('pre', preprocessor), ('model', RandomForestClassifier(n_estimators=100, random_state=42))])
 rf_pipe.fit(X_train, y_train)
 
@@ -212,9 +217,11 @@ plt.show()
 print("__ML__" + json.dumps({{"leaderboard": results, "top_features": top_feats}}) + "__ML__")
 """
         res = execute_code(code)
+        if not res["success"] or "__ML__" not in res["stdout"]:
+            raise RuntimeError(f"ML benchmark failed: {res.get('error')}\n{res.get('stderr')}")
         self.session_state["generated_plots"].extend(res["plots"])
-        match = res["stdout"].split("__ML__")[1]
-        self.session_state["ml_results"] = json.loads(match)
+        _, payload, _ = res["stdout"].split("__ML__", 2)
+        self.session_state["ml_results"] = json.loads(payload)
         return self.session_state["ml_results"]
 
     def generate_final_brief(self) -> str:
@@ -234,7 +241,7 @@ print("__ML__" + json.dumps({{"leaderboard": results, "top_features": top_feats}
 
 ## ⏱️ 30-Second Executive Summary
 * **Month-to-Month contracts represent 55% of all users but account for 78% of all cancellations.**
-* **Support Ticket Threshold:** Customers logging $\ge 3$ support tickets in their first 90 days exhibit a **4.2x higher churn probability**.
+* **Support Ticket Threshold:** Customers logging >= 3 support tickets in their first 90 days exhibit a **4.2x higher churn probability**.
 * **Predictive Performance:** The `{best_m['name']}` model achieved an **ROC-AUC of {best_m['ROC-AUC']}**, enabling high-accuracy early intervention before customers cancel.
 
 ---

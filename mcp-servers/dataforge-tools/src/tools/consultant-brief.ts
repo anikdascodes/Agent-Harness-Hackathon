@@ -45,7 +45,8 @@ export function generateExecutiveBrief(
     md += `${section.description}\n\n`;
     if (section.charts && section.charts.length > 0) {
       for (const chart of section.charts) {
-        md += `![${section.title} Chart](/${chart})\n\n`;
+        const relativeChartPath = chart.startsWith("outputs/") ? chart.replace(/^outputs\//, "../") : chart;
+        md += `![${section.title} Chart](${relativeChartPath})\n\n`;
       }
     }
   }

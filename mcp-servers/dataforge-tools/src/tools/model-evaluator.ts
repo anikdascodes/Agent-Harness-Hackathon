@@ -32,8 +32,13 @@ export async function benchmarkMLModels(
   taskType: "classification" | "regression" = "classification",
   repoRoot: string
 ): Promise<ModelBenchmarkResult> {
+  const safeDatasetLiteral = JSON.stringify(datasetPath);
+  const safeTargetLiteral = JSON.stringify(targetColumn);
+  const safeTaskLiteral = JSON.stringify(taskType);
+
   const pythonScript = `
 import json
+import re
 import os
 import pandas as pd
 import numpy as np
@@ -52,23 +57,46 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier,
 from sklearn.linear_model import LogisticRegression, LinearRegression, Ridge
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-df = pd.read_csv("${datasetPath}")
-target = "${targetColumn}"
+dataset_path = ${safeDatasetLiteral}
+target = ${safeTargetLiteral}
+task = ${safeTaskLiteral}
+
+df = pd.read_csv(dataset_path)
 
 if target not in df.columns:
     raise ValueError(f"Target column '{target}' not found in dataset.")
 
-# Drop ID columns or target missing rows
+# Drop missing target rows
 df = df.dropna(subset=[target])
 X = df.drop(columns=[target])
 y = df[target]
 
-# Drop obvious ID columns (e.g., customer_id, id)
-id_cols = [c for c in X.columns if 'id' in c.lower() or 'key' in c.lower() or X[c].nunique() == len(X)]
-if id_cols:
-    X = X.drop(columns=id_cols)
+# Narrow, explicit ID column detection: only drop non-predictive keys (e.g. customer_id, uuid)
+id_cols_to_drop = []
+for c in X.columns:
+    is_id_name = bool(re.match(r'^(id|.*_id|.*_key|uuid)$', c, re.I))
+    is_unique_object = X[c].dtype == 'object' and X[c].nunique() == len(X)
+    if is_id_name and (is_unique_object or X[c].nunique() > len(X) * 0.9):
+        id_cols_to_drop.append(c)
 
-# Separate numeric and categorical
+if id_cols_to_drop:
+    X = X.drop(columns=id_cols_to_drop)
+
+if X.empty:
+    raise ValueError("No predictive features remaining after identifier filtering.")
+
+# Handle date columns in time series
+date_cols = [c for c in X.columns if 'date' in c.lower() or 'time' in c.lower()]
+for dc in date_cols:
+    try:
+        dt_series = pd.to_datetime(X[dc])
+        X[f'{dc}_year'] = dt_series.dt.year
+        X[f'{dc}_month'] = dt_series.dt.month
+        X[f'{dc}_dayofweek'] = dt_series.dt.dayofweek
+        X = X.drop(columns=[dc])
+    except:
+        pass
+
 num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
 cat_cols = X.select_dtypes(exclude=[np.number]).columns.tolist()
 
@@ -87,11 +115,12 @@ preprocessor = ColumnTransformer(transformers=[
     ('cat', cat_pipe, cat_cols)
 ])
 
-task = "${taskType}"
 is_classif = task == "classification"
 
 if is_classif:
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y if y.nunique() > 1 else None)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y if y.nunique() > 1 else None
+    )
     models = {
         "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
         "Gradient Boosting": GradientBoostingClassifier(random_state=42),
@@ -99,7 +128,8 @@ if is_classif:
         "Decision Tree": DecisionTreeClassifier(max_depth=5, random_state=42)
     }
 else:
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # If date-ordered, split chronologically to avoid lookahead leakage
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=False)
     models = {
         "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
         "Gradient Boosting": GradientBoostingRegressor(random_state=42),
@@ -136,17 +166,23 @@ for name, model in models.items():
         metrics = {"Accuracy": acc, "Precision": prec, "Recall": rec, "F1 Score": f1}
         if auc is not None:
             metrics["ROC-AUC"] = auc
-        score_for_rank = auc if auc is not None else f1
+            primary_metric_name = "ROC-AUC"
+            score_for_rank = auc
+        else:
+            primary_metric_name = "Weighted F1"
+            score_for_rank = f1
     else:
         r2 = round(r2_score(y_test, y_pred), 4)
         rmse = round(float(np.sqrt(mean_squared_error(y_test, y_pred))), 2)
         mae = round(float(mean_absolute_error(y_test, y_pred)), 2)
         metrics = {"R2 Score": r2, "RMSE": rmse, "MAE": mae}
+        primary_metric_name = "R2 Score"
         score_for_rank = r2
 
     evaluated.append({
         "name": name,
         "metrics": metrics,
+        "primary_metric_name": primary_metric_name,
         "score_for_rank": score_for_rank
     })
 
@@ -159,7 +195,7 @@ best_entry = evaluated[0]
 best_name = best_entry["name"]
 best_pipe = fitted_pipelines[best_name]
 
-# Extract feature importances from best model
+# Extract feature importances with proper multiclass support
 feature_names = []
 if num_cols:
     feature_names.extend(num_cols)
@@ -175,8 +211,14 @@ if hasattr(model_obj, "feature_importances_"):
         importances.append({"feature": fn, "importance": round(float(imp), 4)})
     importances.sort(key=lambda x: x["importance"], reverse=True)
 elif hasattr(model_obj, "coef_"):
-    coefs = np.abs(model_obj.coef_).ravel()
-    for fn, c in zip(feature_names, coefs):
+    raw_coefs = model_obj.coef_
+    if raw_coefs.ndim == 2:
+        # Multiclass / multi-target: take mean absolute coefficient across classes
+        agg_coefs = np.mean(np.abs(raw_coefs), axis=0)
+    else:
+        agg_coefs = np.abs(raw_coefs).ravel()
+    
+    for fn, c in zip(feature_names, agg_coefs):
         importances.append({"feature": fn, "importance": round(float(c), 4)})
     importances.sort(key=lambda x: x["importance"], reverse=True)
 
@@ -184,8 +226,7 @@ top_features = importances[:8]
 for tf in top_features:
     tf["directionOrImpact"] = "Primary driver with highest relative predictive weight."
 
-# Generate Visualizations (Plots are automatically saved by executor hook)
-# 1. Feature Importance Plot
+# Generate Visualizations
 plt.figure(figsize=(10, 5))
 feat_df = pd.DataFrame(top_features)
 if not feat_df.empty:
@@ -196,7 +237,6 @@ if not feat_df.empty:
     plt.tight_layout()
     plt.show()
 
-# 2. Confusion Matrix Plot (if classification)
 if is_classif:
     y_pred_best = best_pipe.predict(X_test)
     cm = confusion_matrix(y_test, y_pred_best)
@@ -208,13 +248,14 @@ if is_classif:
     plt.tight_layout()
     plt.show()
 
-# Plain English interpretation for business owner
+# Plain English interpretation with accurate metric naming
+best_metric_name = best_entry["primary_metric_name"]
+best_score = best_entry["score_for_rank"]
+
 if is_classif:
-    best_metric_val = best_entry['metrics'].get('ROC-AUC', best_entry['metrics'].get('F1 Score'))
-    best_metric_str = "ROC-AUC: " + str(best_metric_val)
-    interp = "The " + best_name + " model achieved highest performance (" + best_metric_str + "). Strongest drivers: " + ", ".join([f['feature'] for f in top_features[:3]])
+    interp = f"The {best_name} model achieved highest performance ({best_metric_name}: {best_score}). Strongest drivers: " + ", ".join([f['feature'] for f in top_features[:3]])
 else:
-    interp = "The " + best_name + " model explained " + str(round(best_entry['metrics']['R2 Score'] * 100, 1)) + "% of variance with an average error of " + str(best_entry['metrics']['MAE'])
+    interp = f"The {best_name} model explained {round(best_entry['metrics']['R2 Score'] * 100, 1)}% of variance with an average prediction error of " + str(best_entry["metrics"]["MAE"])
 
 final_data = {
     "targetColumn": target,
@@ -226,8 +267,8 @@ final_data = {
     } for m in evaluated],
     "bestModel": {
         "name": best_name,
-        "primaryMetric": "ROC-AUC" if is_classif else "R2 Score",
-        "score": best_entry["score_for_rank"],
+        "primaryMetric": best_metric_name,
+        "score": best_score,
         "businessInterpretation": interp
     },
     "topFeatures": top_features,
