@@ -105,13 +105,14 @@ for c in X.columns:
 if id_cols_to_drop:
     X = X.drop(columns=id_cols_to_drop)
 
-# Expand identified date columns into calendar features
+# Expand identified date columns into calendar features with missingness indicator
 for dc in date_cols:
     if dc in X.columns:
         dt_series = pd.to_datetime(X[dc], errors='coerce')
-        X[f'{dc}_year'] = dt_series.dt.year.fillna(2024).astype(int)
-        X[f'{dc}_month'] = dt_series.dt.month.fillna(1).astype(int)
-        X[f'{dc}_dayofweek'] = dt_series.dt.dayofweek.fillna(0).astype(int)
+        X[f'{dc}_is_missing'] = dt_series.isna().astype(float)
+        X[f'{dc}_year'] = dt_series.dt.year.astype(float)
+        X[f'{dc}_month'] = dt_series.dt.month.astype(float)
+        X[f'{dc}_dayofweek'] = dt_series.dt.dayofweek.astype(float)
         X = X.drop(columns=[dc])
 
 if X.empty or X.shape[1] == 0:

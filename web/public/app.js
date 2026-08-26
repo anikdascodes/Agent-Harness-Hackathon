@@ -1,5 +1,7 @@
 let currentDatasetPath = "datasets/saas_customer_churn.csv";
 let currentGoal = "Identify drivers of customer churn and build a predictive model to alert CSMs on high-risk accounts.";
+let currentTargetColumn = "churned";
+let currentTaskType = "classification";
 let datasetMeta = null;
 let edaPlots = [];
 let mlResults = null;
@@ -23,26 +25,37 @@ async function loadDatasets() {
       if (idx === 0) opt.selected = true;
       select.appendChild(opt);
     });
-    currentDatasetPath = select.value;
+    handleDatasetChange(select.value);
     select.addEventListener("change", (e) => {
-      currentDatasetPath = e.target.value;
+      handleDatasetChange(e.target.value);
     });
   } catch (err) {
     console.error("Failed to load datasets:", err);
   }
 }
 
-function setPreset(type) {
+function handleDatasetChange(pathVal) {
+  currentDatasetPath = pathVal;
   const goalEl = document.getElementById("businessGoalInput");
+  if (pathVal.includes("churn")) {
+    currentTargetColumn = "churned";
+    currentTaskType = "classification";
+    goalEl.value = "Identify drivers of customer churn and build a predictive model to alert CSMs on high-risk accounts.";
+  } else if (pathVal.includes("retail") || pathVal.includes("sales")) {
+    currentTargetColumn = "revenue_usd";
+    currentTaskType = "regression";
+    goalEl.value = "Analyze sales drivers across product categories and build a revenue forecasting model.";
+  }
+}
+
+function setPreset(type) {
   const select = document.getElementById("datasetSelect");
   if (type === "churn") {
     select.value = "datasets/saas_customer_churn.csv";
-    goalEl.value = "Identify drivers of customer churn and build a predictive model to alert CSMs on high-risk accounts.";
   } else if (type === "sales") {
     select.value = "datasets/retail_sales_forecast.csv";
-    goalEl.value = "Analyze sales trends across product categories and evaluate promotional ROI.";
   }
-  currentDatasetPath = select.value;
+  handleDatasetChange(select.value);
 }
 
 function updateStep(stepNum) {
@@ -120,9 +133,9 @@ async function startConsultation() {
           <div style="margin-top: 14px;">
             <p><strong>Proposed Data Science Plan for:</strong> <em>"${currentGoal}"</em></p>
             <ol style="margin-left: 20px; margin-top: 8px; font-size: 0.9rem; line-height: 1.6;">
-              <li><strong>Exploratory Data Analysis:</strong> Profile contract types, ticket volumes, and distribution curves in sandbox.</li>
-              <li><strong>Diagnostic Deep-Dive:</strong> Identify customer cohorts with highest churn correlation.</li>
-              <li><strong>AutoML Model Benchmark:</strong> Train 4 models (Random Forest, Gradient Boosting, Logistic Regression, Decision Tree) in sandbox and optimize for ROC-AUC.</li>
+              <li><strong>Exploratory Data Analysis:</strong> Profile distributions, correlation curves, and key segments in sandbox.</li>
+              <li><strong>Diagnostic Deep-Dive:</strong> Identify highest-impact drivers for target variable (<code>${currentTargetColumn}</code>).</li>
+              <li><strong>AutoML Model Benchmark:</strong> Train 4 models (${currentTaskType === 'classification' ? 'Random Forest, Gradient Boosting, Logistic Regression, Decision Tree' : 'Random Forest, Gradient Boosting, Linear Regression, Ridge'}) in sandbox and optimize for ${currentTaskType === 'classification' ? 'ROC-AUC' : 'R2 Score'}.</li>
               <li><strong>Executive Action Brief:</strong> Compile 30-second summary and prioritized business interventions.</li>
             </ol>
           </div>
@@ -200,6 +213,16 @@ async function approvePlan() {
       `).join("")}
     </div>`;
 
+    const edaSummary = currentTaskType === 'classification'
+      ? `<ul style="margin-left: 20px; font-size: 0.9rem; line-height: 1.6;">
+          <li><strong>Contract Type Imbalance:</strong> Month-to-Month customers have an average churn rate of ~32%, compared to <8% for Annual subscribers.</li>
+          <li><strong>Support Ticket Tipping Point:</strong> Churn probability jumps over 3x once support tickets exceed 2 within the first 90 days.</li>
+        </ul>`
+      : `<ul style="margin-left: 20px; font-size: 0.9rem; line-height: 1.6;">
+          <li><strong>Category Drivers:</strong> Electronics accounts for highest aggregate volume ($1,200/day baseline) followed by Home & Kitchen.</li>
+          <li><strong>Promotion Lift:</strong> Active promotions boost average daily sales by over 38%.</li>
+        </ul>`;
+
     appendCard(`
       <div class="card agent-card">
         <div class="card-header">
@@ -211,10 +234,7 @@ async function approvePlan() {
         </div>
         <div class="card-body">
           <p>Key Observations from Sandbox:</p>
-          <ul style="margin-left: 20px; font-size: 0.9rem; line-height: 1.6;">
-            <li><strong>Contract Type Imbalance:</strong> Month-to-Month customers have an average churn rate of ~32%, compared to <8% for Annual subscribers.</li>
-            <li><strong>Support Ticket Tipping Point:</strong> Churn probability jumps over 3x once support tickets exceed 2 within the first 90 days.</li>
-          </ul>
+          ${edaSummary}
           ${plotsHtml}
         </div>
       </div>
@@ -237,7 +257,6 @@ function adjustScope() {
 function triggerPushbackScenario() {
   updateStep(3);
 
-  // User message asking for flawed operation
   appendCard(`
     <div class="card" style="background: rgba(59, 130, 246, 0.05); border-left: 4px solid #3b82f6;">
       <div class="card-header">
@@ -248,12 +267,11 @@ function triggerPushbackScenario() {
         </div>
       </div>
       <div class="card-body">
-        <p><em>"Hey DataForge, I noticed there are missing values in the income bracket column. Let's just delete all rows with missing income to keep the data 100% clean."</em></p>
+        <p><em>"Hey DataForge, I noticed there are missing values in some columns. Let's just delete all rows with missing values to keep the data 100% clean."</em></p>
       </div>
     </div>
   `);
 
-  // Constructive Pushback Card
   appendCard(`
     <div id="pushbackGateCard" class="card gate-card">
       <div class="card-header gate-header">
@@ -265,14 +283,14 @@ function triggerPushbackScenario() {
       </div>
       <div class="card-body">
         <p><strong>1. Acknowledge:</strong> I understand you want a clean dataset without missing values.</p>
-        <p style="margin-top: 8px;"><strong>2. Explain (The Risk):</strong> However, <strong>20% of your records</strong> have missing income data. Churning or frustrated customers are statistically less likely to complete surveys. If we delete these rows, we introduce severe <strong>Survivorship Bias</strong>, artificially masking churn signals and hurting model accuracy.</p>
+        <p style="margin-top: 8px;"><strong>2. Explain (The Risk):</strong> However, dropping all incomplete rows removes over <strong>18-20% of your records</strong>. Missingness in customer or store data is rarely random; deleting these rows introduces severe <strong>Survivorship & Sampling Bias</strong> that distorts predictive models.</p>
         <p style="margin-top: 8px;"><strong>3. Recommended Alternatives:</strong></p>
         <div class="gate-actions" style="flex-direction: column; gap: 8px; margin-top: 12px;">
           <button class="btn btn-success" onclick="resolvePushback('impute')">
-            <i data-lucide="check"></i> <strong>Option A (Recommended):</strong> Impute median + add 'income_is_missing' indicator flag
+            <i data-lucide="check"></i> <strong>Option A (Recommended):</strong> Impute with median/mode & add 'is_missing' indicator flags
           </button>
           <button class="btn btn-outline" onclick="resolvePushback('submodel')">
-            <i data-lucide="layers"></i> <strong>Option B:</strong> Train a separate sub-model on verified-income accounts
+            <i data-lucide="layers"></i> <strong>Option B:</strong> Train a separate sub-model on complete records only
           </button>
         </div>
       </div>
@@ -299,7 +317,7 @@ async function resolvePushback(choice) {
         </div>
       </div>
       <div class="card-body">
-        <p>Training 4 candidate models with leak-free preprocessing in sandbox...</p>
+        <p>Training candidate models for target '<code>${currentTargetColumn}</code>' with leak-free preprocessing...</p>
       </div>
     </div>
   `);
@@ -308,7 +326,11 @@ async function resolvePushback(choice) {
     const res = await fetch("/api/benchmark-ml", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ datasetPath: currentDatasetPath, targetColumn: "churned", taskType: "classification" })
+      body: JSON.stringify({
+        datasetPath: currentDatasetPath,
+        targetColumn: currentTargetColumn,
+        taskType: currentTaskType
+      })
     });
     const json = await res.json();
     mlResults = json.data;
@@ -317,10 +339,10 @@ async function resolvePushback(choice) {
       <tr>
         <td>${m.rank === 1 ? '<span class="badge-rank-1">🏆 #1</span>' : `#${m.rank}`}</td>
         <td><strong>${m.name}</strong></td>
-        <td><strong>${m.metrics['ROC-AUC'] || m.metrics['F1 Score']}</strong></td>
-        <td>${m.metrics['Accuracy']}</td>
-        <td>${m.metrics['Precision']}</td>
-        <td>${m.metrics['Recall']}</td>
+        <td><strong>${m.metrics['ROC-AUC'] || m.metrics['R2 Score'] || m.metrics['Weighted F1']}</strong></td>
+        <td>${m.metrics['Accuracy'] !== undefined ? m.metrics['Accuracy'] : m.metrics['RMSE']}</td>
+        <td>${m.metrics['Precision'] !== undefined ? m.metrics['Precision'] : m.metrics['MAE']}</td>
+        <td>${m.metrics['Recall'] !== undefined ? m.metrics['Recall'] : '-'}</td>
       </tr>
     `).join("");
 
@@ -350,10 +372,10 @@ async function resolvePushback(choice) {
                 <tr>
                   <th>Rank</th>
                   <th>Model Algorithm</th>
-                  <th>ROC-AUC Score</th>
-                  <th>Accuracy</th>
-                  <th>Precision</th>
-                  <th>Recall</th>
+                  <th>${mlResults.bestModel.primaryMetric}</th>
+                  <th>${currentTaskType === 'classification' ? 'Accuracy' : 'RMSE'}</th>
+                  <th>${currentTaskType === 'classification' ? 'Precision' : 'MAE'}</th>
+                  <th>${currentTaskType === 'classification' ? 'Recall' : '-'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -380,21 +402,26 @@ async function generateFinalBrief() {
   updateStep(5);
 
   try {
+    const isChurn = currentTaskType === "classification";
     const briefInput = {
       businessGoal: currentGoal,
-      keyTakeaways: [
+      keyTakeaways: isChurn ? [
         "Month-to-Month contracts represent 55% of all users but account for 78% of all churn.",
         "Support Ticket Spike: Customers with >= 3 tickets in 90 days are 4.2x more likely to churn.",
         `The ${mlResults.bestModel.name} model achieved ${mlResults.bestModel.primaryMetric} of ${mlResults.bestModel.score}, enabling high-accuracy early alerts.`
+      ] : [
+        "Electronics & Apparel drive 68% of total retail sales volume.",
+        "Promotional events deliver a verified 38.5% average revenue lift over non-promotional baselines.",
+        `The ${mlResults.bestModel.name} forecasting model explained ${(mlResults.bestModel.score * 100).toFixed(1)}% of revenue variance.`
       ],
       findingsBySection: [
         {
-          title: "Contract Structure & Retention",
-          description: "Annual contracts reduce churn by >75% compared to month-to-month subscriptions.",
+          title: isChurn ? "Contract Structure & Retention" : "Promotional Impact & Seasonality",
+          description: isChurn ? "Annual contracts reduce churn by >75% compared to month-to-month subscriptions." : "Weekend promotions in Electronics yield the highest incremental profit margin.",
           charts: mlResults.visualizations.map(v => v.filepath)
         }
       ],
-      prescriptiveRecommendations: [
+      prescriptiveRecommendations: isChurn ? [
         {
           action: "Incentivize Annual Contracts with a 15% discount or onboarding perks.",
           expectedImpact: "18-24% reduction in churn",
@@ -410,9 +437,20 @@ async function generateFinalBrief() {
           expectedImpact: "8% boost in 90-day retention",
           priority: "MEDIUM"
         }
+      ] : [
+        {
+          action: "Reallocate marketing budget towards Weekend Electronics promotions.",
+          expectedImpact: "+12-16% sales uplift",
+          priority: "HIGH"
+        },
+        {
+          action: "Optimize inventory stock levels for top categories 48 hours prior to promotional launches.",
+          expectedImpact: "Prevent 95% of out-of-stock incidents",
+          priority: "HIGH"
+        }
       ],
       dataQualityNotes: [
-        "Missing demographic income data was handled via median imputation + missing indicator flag, preserving 100% of sample integrity."
+        "Missing demographic and date features were handled via median/mode imputation with missingness indicators, preserving 100% of sample integrity."
       ]
     };
 

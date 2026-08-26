@@ -1,7 +1,7 @@
 """
 DataForge AI - Safe Python Sandbox Executor
-Hardened execution environment with AST-based safety checks, true process-level timeout enforcement,
-and automatic Matplotlib/Seaborn plot capture.
+Hardened execution environment with AST-based safety checks, file-based IPC (deadlock-free on large outputs),
+true process-level timeout enforcement, and automatic Matplotlib/Seaborn plot capture.
 """
 
 import sys
@@ -11,6 +11,7 @@ import ast
 import json
 import time
 import uuid
+import tempfile
 import traceback
 import argparse
 import multiprocessing
@@ -56,8 +57,8 @@ def validate_code_safety(code_str: str) -> tuple[bool, str | None]:
     return True, None
 
 
-def _sandbox_process_target(code_str: str, orig_cwd: str, plots_dir: str, result_pipe):
-    """Target function executed in a dedicated, killable child process."""
+def _sandbox_process_target(code_str: str, orig_cwd: str, plots_dir: str, result_file_path: str):
+    """Target function executed in a dedicated child process, writing results to file to avoid IPC buffer deadlocks."""
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
     captured_plots = []
@@ -125,21 +126,27 @@ def _sandbox_process_target(code_str: str, orig_cwd: str, plots_dir: str, result
         error_msg = str(e)
         traceback_str = traceback.format_exc()
 
-    result_pipe.send({
+    result_payload = {
         "success": success,
         "stdout": stdout_capture.getvalue(),
         "stderr": stderr_capture.getvalue(),
         "error": error_msg,
         "traceback": traceback_str,
         "plots": captured_plots
-    })
+    }
+
+    try:
+        with open(result_file_path, "w", encoding="utf-8") as f:
+            json.dump(result_payload, f)
+    except Exception as io_err:
+        pass
 
 
 def execute_code(code_str: str, working_dir: str = None, timeout_seconds: int = 45) -> dict:
     """
     Executes the provided python code in a controlled, monitored sandbox.
     Validates AST safety, enforces hard process-level timeout (terminating runaway execution),
-    and captures all visual plots.
+    uses file-based IPC to prevent OS pipe deadlocks on large outputs, and captures all visual plots.
     """
     start_time = time.time()
     
@@ -164,10 +171,13 @@ def execute_code(code_str: str, working_dir: str = None, timeout_seconds: int = 
     plots_dir = os.path.join(orig_cwd, "outputs", "plots")
     os.makedirs(plots_dir, exist_ok=True)
 
-    parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
+    # Use a unique temp file for IPC to prevent buffer deadlock
+    temp_fd, temp_result_path = tempfile.mkstemp(suffix=".json", prefix="dataforge_sandbox_")
+    os.close(temp_fd)
+
     proc = multiprocessing.Process(
         target=_sandbox_process_target,
-        args=(code_str, orig_cwd, plots_dir, child_conn)
+        args=(code_str, orig_cwd, plots_dir, temp_result_path)
     )
 
     proc.start()
@@ -178,6 +188,8 @@ def execute_code(code_str: str, working_dir: str = None, timeout_seconds: int = 
         proc.kill()
         proc.join(timeout=1.0)
         os.chdir(orig_cwd)
+        if os.path.exists(temp_result_path):
+            os.remove(temp_result_path)
         return {
             "success": False,
             "stdout": "",
@@ -190,11 +202,18 @@ def execute_code(code_str: str, working_dir: str = None, timeout_seconds: int = 
 
     os.chdir(orig_cwd)
 
-    if parent_conn.poll():
-        data = parent_conn.recv()
-        data["execution_duration_seconds"] = round(time.time() - start_time, 3)
-        return data
+    if os.path.exists(temp_result_path) and os.path.getsize(temp_result_path) > 0:
+        try:
+            with open(temp_result_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            data["execution_duration_seconds"] = round(time.time() - start_time, 3)
+            return data
+        finally:
+            if os.path.exists(temp_result_path):
+                os.remove(temp_result_path)
     else:
+        if os.path.exists(temp_result_path):
+            os.remove(temp_result_path)
         return {
             "success": False,
             "stdout": "",

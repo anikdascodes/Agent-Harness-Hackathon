@@ -35,7 +35,6 @@ def test_security_ast_validation():
     assert "Security Violation" in res["stderr"]
 
 def test_hard_timeout_enforcement():
-    # Verify infinite loop terminates within timeout_seconds
     hanging_code = """
 import time
 while True:
@@ -44,6 +43,16 @@ while True:
     res = execute_code(hanging_code, timeout_seconds=2)
     assert res["success"] is False
     assert "TimeoutError" in res["error"]
+
+def test_large_output_handling():
+    # Generate 300KB of stdout to ensure file-based IPC doesn't deadlock
+    large_output_code = """
+for i in range(10000):
+    print(f"DataForge row output line index {i} with payload data...")
+"""
+    res = execute_code(large_output_code, timeout_seconds=10)
+    assert res["success"] is True
+    assert len(res["stdout"]) > 100000
 
 def test_plot_capture():
     code = """

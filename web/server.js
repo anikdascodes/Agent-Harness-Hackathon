@@ -13,6 +13,7 @@ import { generateExecutiveBrief } from "../mcp-servers/dataforge-tools/dist/tool
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, "..");
+const DATASETS_DIR = path.resolve(REPO_ROOT, "datasets");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,15 +22,39 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/outputs", express.static(path.join(REPO_ROOT, "outputs")));
-app.use("/datasets", express.static(path.join(REPO_ROOT, "datasets")));
+app.use("/datasets", express.static(DATASETS_DIR));
 
-const upload = multer({ dest: path.join(REPO_ROOT, "datasets", "uploads") });
+const upload = multer({ dest: path.join(DATASETS_DIR, "uploads") });
+
+/**
+ * Validates and resolves a dataset path strictly within the allowed datasets directory.
+ * Prevents arbitrary file reads and directory traversal attacks.
+ */
+function resolveSafeDatasetPath(clientPath) {
+  if (!clientPath || typeof clientPath !== "string") {
+    throw new Error("Invalid or missing datasetPath");
+  }
+
+  // If path starts with "datasets/", remove prefix to resolve against DATASETS_DIR
+  const normalizedRel = clientPath.replace(/^datasets\//, "");
+  const resolved = path.resolve(DATASETS_DIR, normalizedRel);
+
+  // Security boundary check: must be strictly inside DATASETS_DIR
+  if (!resolved.startsWith(DATASETS_DIR)) {
+    throw new Error("Access Denied: Path traversal outside datasets directory is restricted.");
+  }
+
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+    throw new Error(`Dataset file not found: ${path.basename(resolved)}`);
+  }
+
+  return resolved;
+}
 
 // 1. List Available Datasets
 app.get("/api/datasets", (req, res) => {
   try {
-    const datasetsDir = path.join(REPO_ROOT, "datasets");
-    const files = fs.readdirSync(datasetsDir).filter(f => f.endsWith(".csv"));
+    const files = fs.readdirSync(DATASETS_DIR).filter(f => f.endsWith(".csv"));
     const list = files.map(f => ({
       filename: f,
       relativePath: `datasets/${f}`,
@@ -45,28 +70,29 @@ app.get("/api/datasets", (req, res) => {
 // 2. Inspect Dataset
 app.post("/api/inspect", async (req, res) => {
   try {
-    const { datasetPath } = req.body;
-    const absPath = path.isAbsolute(datasetPath) ? datasetPath : path.join(REPO_ROOT, datasetPath);
-    const meta = await inspectDataset(absPath, REPO_ROOT);
+    const safePath = resolveSafeDatasetPath(req.body.datasetPath);
+    const meta = await inspectDataset(safePath, REPO_ROOT);
     res.json({ success: true, data: meta });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
 // 3. Run Sandboxed EDA
 app.post("/api/run-eda", async (req, res) => {
   try {
-    const { datasetPath } = req.body;
+    const safePath = resolveSafeDatasetPath(req.body.datasetPath);
+    const safeLiteral = JSON.stringify(safePath);
+
     const pyScript = `
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 sns.set_theme(style="whitegrid", palette="tab10")
-df = pd.read_csv("${datasetPath}")
+df = pd.read_csv(${safeLiteral})
 
-# Plot 1: Target distribution by contract type if churn
+# SaaS Churn Plots
 if "contract_type" in df.columns and "churned" in df.columns:
     plt.figure(figsize=(7, 4.5))
     churn_by_contract = df.groupby("contract_type")["churned"].mean().reset_index()
@@ -81,7 +107,6 @@ if "contract_type" in df.columns and "churned" in df.columns:
     plt.tight_layout()
     plt.show()
 
-# Plot 2: Correlation / Drivers
 if "support_tickets_count" in df.columns and "churned" in df.columns:
     plt.figure(figsize=(7, 4.5))
     churn_by_tickets = df.groupby("support_tickets_count")["churned"].mean().reset_index()
@@ -92,11 +117,33 @@ if "support_tickets_count" in df.columns and "churned" in df.columns:
     plt.ylabel("Churn Rate (%)")
     plt.tight_layout()
     plt.show()
+
+# Retail Sales Plots
+if "category" in df.columns and "revenue_usd" in df.columns:
+    plt.figure(figsize=(7, 4.5))
+    rev_by_cat = df.groupby("category")["revenue_usd"].sum().reset_index()
+    sns.barplot(data=rev_by_cat, x="category", y="revenue_usd", palette="Blues_r")
+    plt.title("Total Revenue by Product Category", fontsize=13, fontweight="bold")
+    plt.xlabel("Product Category")
+    plt.ylabel("Total Revenue (USD)")
+    plt.tight_layout()
+    plt.show()
+
+if "is_promotion" in df.columns and "revenue_usd" in df.columns:
+    plt.figure(figsize=(7, 4.5))
+    promo_rev = df.groupby("is_promotion")["revenue_usd"].mean().reset_index()
+    promo_rev["Promo"] = promo_rev["is_promotion"].map({0: "Regular Days", 1: "Promotional Days"})
+    sns.barplot(data=promo_rev, x="Promo", y="revenue_usd", palette="Greens_d")
+    plt.title("Average Daily Revenue: Promo vs Regular", fontsize=13, fontweight="bold")
+    plt.xlabel("Day Type")
+    plt.ylabel("Average Daily Revenue (USD)")
+    plt.tight_layout()
+    plt.show()
 `;
     const result = await runPythonInSandbox(pyScript, REPO_ROOT);
     res.json({ success: true, data: result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
@@ -104,11 +151,11 @@ if "support_tickets_count" in df.columns and "churned" in df.columns:
 app.post("/api/benchmark-ml", async (req, res) => {
   try {
     const { datasetPath, targetColumn, taskType } = req.body;
-    const absPath = path.isAbsolute(datasetPath) ? datasetPath : path.join(REPO_ROOT, datasetPath);
-    const result = await benchmarkMLModels(absPath, targetColumn || "churned", taskType || "classification", REPO_ROOT);
+    const safePath = resolveSafeDatasetPath(datasetPath);
+    const result = await benchmarkMLModels(safePath, targetColumn, taskType, REPO_ROOT);
     res.json({ success: true, data: result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
@@ -119,7 +166,7 @@ app.post("/api/generate-brief", (req, res) => {
     const result = generateExecutiveBrief(briefInput, REPO_ROOT);
     res.json({ success: true, data: result });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
