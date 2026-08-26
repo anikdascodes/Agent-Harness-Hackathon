@@ -25,7 +25,6 @@ def test_syntax_error_handling():
     assert res["error"] is not None
 
 def test_security_ast_validation():
-    # Attempting to import restricted module should fail before execution
     malicious_code = "import subprocess\nsubprocess.run(['ls'])"
     is_safe, err = validate_code_safety(malicious_code)
     assert is_safe is False
@@ -34,6 +33,17 @@ def test_security_ast_validation():
     res = execute_code(malicious_code)
     assert res["success"] is False
     assert "Security Violation" in res["stderr"]
+
+def test_hard_timeout_enforcement():
+    # Verify infinite loop terminates within timeout_seconds
+    hanging_code = """
+import time
+while True:
+    time.sleep(0.1)
+"""
+    res = execute_code(hanging_code, timeout_seconds=2)
+    assert res["success"] is False
+    assert "TimeoutError" in res["error"]
 
 def test_plot_capture():
     code = """

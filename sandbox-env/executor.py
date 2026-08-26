@@ -1,6 +1,6 @@
 """
 DataForge AI - Safe Python Sandbox Executor
-Hardened execution environment with AST-based safety checks, internal timeout enforcement,
+Hardened execution environment with AST-based safety checks, true process-level timeout enforcement,
 and automatic Matplotlib/Seaborn plot capture.
 """
 
@@ -13,10 +13,10 @@ import time
 import uuid
 import traceback
 import argparse
-import concurrent.futures
+import multiprocessing
 from contextlib import redirect_stdout, redirect_stderr
 
-# Allowed top-level modules for data science workflows
+# Restricted modules and system functions for safe execution
 BLOCKED_MODULES = {
     "subprocess", "pty", "socket", "http", "urllib", "requests",
     "shutil", "telnetlib", "ftplib", "smtplib", "webbrowser",
@@ -38,7 +38,6 @@ def validate_code_safety(code_str: str) -> tuple[bool, str | None]:
         return False, f"Syntax Error: {e.msg} at line {e.lineno}"
 
     for node in ast.walk(tree):
-        # Block dangerous imports
         if isinstance(node, ast.Import):
             for alias in node.names:
                 root_module = alias.name.split('.')[0]
@@ -49,7 +48,6 @@ def validate_code_safety(code_str: str) -> tuple[bool, str | None]:
                 root_module = node.module.split('.')[0]
                 if root_module in BLOCKED_MODULES:
                     return False, f"Security Violation: Import from module '{root_module}' is restricted in sandbox."
-        # Block dangerous attribute calls (e.g. os.system, os.popen)
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute):
                 if node.func.attr in BLOCKED_CALLS:
@@ -58,8 +56,8 @@ def validate_code_safety(code_str: str) -> tuple[bool, str | None]:
     return True, None
 
 
-def _run_in_sandbox_worker(code_str: str, orig_cwd: str, plots_dir: str) -> tuple[bool, str, str, str | None, str | None, list]:
-    """Worker function executed in worker thread."""
+def _sandbox_process_target(code_str: str, orig_cwd: str, plots_dir: str, result_pipe):
+    """Target function executed in a dedicated, killable child process."""
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()
     captured_plots = []
@@ -127,13 +125,21 @@ def _run_in_sandbox_worker(code_str: str, orig_cwd: str, plots_dir: str) -> tupl
         error_msg = str(e)
         traceback_str = traceback.format_exc()
 
-    return success, stdout_capture.getvalue(), stderr_capture.getvalue(), error_msg, traceback_str, captured_plots
+    result_pipe.send({
+        "success": success,
+        "stdout": stdout_capture.getvalue(),
+        "stderr": stderr_capture.getvalue(),
+        "error": error_msg,
+        "traceback": traceback_str,
+        "plots": captured_plots
+    })
 
 
 def execute_code(code_str: str, working_dir: str = None, timeout_seconds: int = 45) -> dict:
     """
     Executes the provided python code in a controlled, monitored sandbox.
-    Validates AST safety, enforces execution timeout, and captures all visual plots.
+    Validates AST safety, enforces hard process-level timeout (terminating runaway execution),
+    and captures all visual plots.
     """
     start_time = time.time()
     
@@ -158,41 +164,46 @@ def execute_code(code_str: str, working_dir: str = None, timeout_seconds: int = 
     plots_dir = os.path.join(orig_cwd, "outputs", "plots")
     os.makedirs(plots_dir, exist_ok=True)
 
-    success = False
-    stdout = ""
-    stderr = ""
-    error_msg = None
-    traceback_str = None
-    captured_plots = []
+    parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
+    proc = multiprocessing.Process(
+        target=_sandbox_process_target,
+        args=(code_str, orig_cwd, plots_dir, child_conn)
+    )
 
-    # 2. Timeout Enforcement via ThreadPoolExecutor
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_run_in_sandbox_worker, code_str, orig_cwd, plots_dir)
-            try:
-                success, stdout, stderr, error_msg, traceback_str, captured_plots = future.result(timeout=timeout_seconds)
-            except concurrent.futures.TimeoutError:
-                success = False
-                error_msg = f"TimeoutError: Execution exceeded {timeout_seconds} seconds limit."
-                stderr = error_msg
-    except Exception as ex:
-        success = False
-        error_msg = str(ex)
-        traceback_str = traceback.format_exc()
-    finally:
+    proc.start()
+    proc.join(timeout=timeout_seconds)
+
+    if proc.is_alive():
+        # Hard process-level termination of runaway/hanging code
+        proc.kill()
+        proc.join(timeout=1.0)
         os.chdir(orig_cwd)
+        return {
+            "success": False,
+            "stdout": "",
+            "stderr": f"TimeoutError: Sandbox execution exceeded {timeout_seconds}s limit.",
+            "error": f"TimeoutError: Sandbox execution exceeded {timeout_seconds}s limit.",
+            "traceback": None,
+            "plots": [],
+            "execution_duration_seconds": round(time.time() - start_time, 3)
+        }
 
-    execution_duration = round(time.time() - start_time, 3)
+    os.chdir(orig_cwd)
 
-    return {
-        "success": success,
-        "stdout": stdout,
-        "stderr": stderr,
-        "error": error_msg,
-        "traceback": traceback_str,
-        "plots": captured_plots,
-        "execution_duration_seconds": execution_duration
-    }
+    if parent_conn.poll():
+        data = parent_conn.recv()
+        data["execution_duration_seconds"] = round(time.time() - start_time, 3)
+        return data
+    else:
+        return {
+            "success": False,
+            "stdout": "",
+            "stderr": "Execution process exited abnormally without returning output.",
+            "error": "Process abnormally terminated",
+            "traceback": None,
+            "plots": [],
+            "execution_duration_seconds": round(time.time() - start_time, 3)
+        }
 
 
 def main():
