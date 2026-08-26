@@ -63,24 +63,25 @@ print("PROCESSED_ROWS=" + str(len(df)))
     ],
     findingsBySection: [
       {
-        title: "Contract Type Impact",
-        description: "Month-to-Month contracts represent 55% of all users but 78% of all churn events.",
-        charts: mlRes.visualizations.map(v => v.filepath)
+        title: "Contract Duration & Churn",
+        description: "Month-to-month contracts have a 32% churn rate compared to 5% for two-year contracts.",
+        charts: ["outputs/plots/plot_sample.png"]
       }
     ],
     prescriptiveRecommendations: [
       {
-        action: "Deploy automated proactive check-ins for Month-to-Month users after 2 support tickets.",
-        expectedImpact: "Estimated 15-22% reduction in early churn.",
+        action: "Incentivize annual renewals with a 15% discount",
+        expectedImpact: "Estimated 20% reduction in month-to-month churn",
         priority: "HIGH"
       }
     ],
     dataQualityNotes: [
-      "income_bracket had 20% missing values; median imputation used without data loss."
+      "100% of sample integrity preserved through median baseline imputation with indicator flags."
     ]
   }, REPO_ROOT);
 
-  assert(brief.markdownContent.includes("Executive Data Science Brief"), "Should generate valid markdown");
+  assert(brief.reportPath.endsWith(".md"), "Report path should be Markdown");
+  assert(brief.markdownContent.includes("30-Second Executive Summary"), "Brief should include summary");
   console.log(`✅ generateExecutiveBrief passed: saved report to ${brief.reportPath}.\n`);
 
   console.log("🎉 All DataForge MCP Tools Integration Tests Passed Successfully!");

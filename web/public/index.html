@@ -96,40 +96,45 @@
               <span class="step-circle">4</span>
               <div class="step-info">
                 <strong>AutoML Benchmark</strong>
-                <small>4 Models & Feature Ranking</small>
+                <small>4 Models Evaluated</small>
               </div>
             </li>
             <li id="step5" class="step-item">
               <span class="step-circle">5</span>
               <div class="step-info">
                 <strong>Executive Brief</strong>
-                <small>30s Summary & Actions</small>
+                <small>Actionable Summary</small>
               </div>
             </li>
           </ul>
         </div>
 
-        <div class="panel-actions">
-          <button id="startBtn" class="btn btn-primary btn-block">
-            <i data-lucide="play"></i> Start Autonomous Consultation
-          </button>
-        </div>
+        <button id="startBtn" class="btn btn-primary btn-block">
+          <i data-lucide="play"></i> Start Autonomous Consultation
+        </button>
       </aside>
 
-      <!-- Center & Right: Interactive Timeline & Artifacts -->
-      <main class="main-content">
-        <div id="timeline" class="timeline-container">
-          <!-- Initial Welcome Card -->
-          <div class="card agent-card">
+      <!-- Right Chat & Artifact Timeline -->
+      <main class="timeline-container">
+        <div id="timeline" class="timeline">
+          <!-- Intro Hero Card -->
+          <div class="card intro-card">
             <div class="card-header">
               <div class="avatar"><i data-lucide="bot"></i></div>
               <div>
-                <h3>DataForge AI Consultant</h3>
-                <span class="timestamp">Ready to assist</span>
+                <h3>Welcome to DataForge AI</h3>
+                <span class="timestamp">Enterprise Agent Harness Consultant</span>
               </div>
             </div>
             <div class="card-body">
-              <p>Welcome! I am your AI Data Science Partner. Select a dataset on the left and define your business goal. I will inspect the data structure, propose a comprehensive analysis plan, execute code safely inside the TrueForge sandbox, and provide an executive-ready brief with plain-English insights.</p>
+              <p>I am your autonomous Data Science employee built on the <strong>TrueForge Agent Harness</strong>. I work just like an elite consultant:</p>
+              <ul class="feature-list">
+                <li><i data-lucide="shield-alert"></i> <strong>Approval-Gated:</strong> I always propose a 4-stage analysis plan and wait for your sign-off before running code.</li>
+                <li><i data-lucide="cpu"></i> <strong>Sandboxed Execution:</strong> All data profiling, charts, and AutoML training run safely in monitored Python environments.</li>
+                <li><i data-lucide="message-square-warning"></i> <strong>Constructive Pushback:</strong> If a requested approach has statistical flaws (like survivorship bias), I push back constructively with the <em>AEO (Acknowledge-Explain-Offer Alternatives)</em> framework.</li>
+                <li><i data-lucide="file-check"></i> <strong>Executive Reports:</strong> You receive a clean, 30-second summary and prioritized business action matrix.</li>
+              </ul>
+              <p class="cta-hint">👈 Select a dataset and business goal on the left, then click <strong>Start Autonomous Consultation</strong> to begin.</p>
             </div>
           </div>
         </div>
@@ -138,6 +143,8 @@
   </div>
 
   <script src="app.js"></script>
-  <script>lucide.createIcons();</script>
+  <script>
+    lucide.createIcons();
+  </script>
 </body>
 </html>
