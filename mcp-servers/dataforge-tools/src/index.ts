@@ -184,8 +184,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const datasetPath = String(args?.datasetPath);
       const absDatasetPath = path.isAbsolute(datasetPath) ? datasetPath : path.join(REPO_ROOT, datasetPath);
       const targetColumn = String(args?.targetColumn);
-      const taskType = (args?.taskType as "classification" | "regression") || "classification";
-      const missingStrategy = (args?.missingStrategy as "impute" | "drop") || "impute";
+
+      const rawTaskType = args?.taskType ?? "classification";
+      if (rawTaskType !== "classification" && rawTaskType !== "regression") {
+        throw new Error(`Invalid taskType "${rawTaskType}". Must be "classification" or "regression".`);
+      }
+      const taskType = rawTaskType as "classification" | "regression";
+
+      const rawMissing = args?.missingStrategy ?? "impute";
+      if (rawMissing !== "impute" && rawMissing !== "drop") {
+        throw new Error(`Invalid missingStrategy "${rawMissing}". Must be "impute" or "drop".`);
+      }
+      const missingStrategy = rawMissing as "impute" | "drop";
+
       const result = await benchmarkMLModels(absDatasetPath, targetColumn, taskType, REPO_ROOT, missingStrategy);
       return {
         content: [

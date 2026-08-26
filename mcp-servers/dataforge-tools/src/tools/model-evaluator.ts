@@ -37,6 +37,17 @@ export async function benchmarkMLModels(
 ): Promise<ModelBenchmarkResult> {
   const safeDatasetLiteral = JSON.stringify(datasetPath);
   const safeTargetLiteral = JSON.stringify(targetColumn);
+
+  // Runtime validation (defense-in-depth)
+  const validTaskTypes = ["classification", "regression"];
+  if (!validTaskTypes.includes(taskType)) {
+    throw new Error(`Invalid taskType "${taskType}". Must be one of: ${validTaskTypes.join(", ")}`);
+  }
+  const validStrategies = ["impute", "drop"];
+  if (!validStrategies.includes(missingStrategy)) {
+    throw new Error(`Invalid missingStrategy "${missingStrategy}". Must be one of: ${validStrategies.join(", ")}`);
+  }
+
   const safeTaskLiteral = JSON.stringify(taskType);
   const safeMissingLiteral = JSON.stringify(missingStrategy);
 

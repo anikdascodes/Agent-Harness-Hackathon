@@ -6,6 +6,20 @@ let currentMissingStrategy = "impute";
 let datasetMeta = null;
 let edaPlots = [];
 let mlResults = null;
+let edaInsights = []; // Persisted EDA insights for use in executive brief
+
+/**
+ * Escapes HTML special characters to prevent XSS when inserting dynamic values into innerHTML.
+ */
+function escapeHtml(str) {
+  if (typeof str !== "string") return String(str);
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
 // Initialize on load
 document.addEventListener("DOMContentLoaded", async () => {
@@ -127,6 +141,23 @@ async function startConsultation() {
       body: JSON.stringify({ datasetPath: currentDatasetPath })
     });
     const json = await res.json();
+    if (!res.ok || !json.success || !json.data) {
+      appendCard(`
+        <div class="card" style="border-left: 4px solid #ef4444; background: rgba(239,68,68,0.05);">
+          <div class="card-header">
+            <div class="avatar" style="background: #ef4444;"><i data-lucide="alert-circle"></i></div>
+            <div>
+              <h3>Dataset Inspection Failed</h3>
+              <span class="timestamp">Error</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <p>${escapeHtml(json.error || "Unknown error from API")}</p>
+          </div>
+        </div>
+      `);
+      return;
+    }
     datasetMeta = json.data;
 
     // If target not in columns, suggest available target or set first binary/last column
@@ -195,7 +226,15 @@ async function startConsultation() {
       </div>
     `);
   } catch (err) {
-    console.error(err);
+    appendCard(`
+      <div class="card" style="border-left: 4px solid #ef4444; background: rgba(239,68,68,0.05);">
+        <div class="card-header">
+          <div class="avatar" style="background: #ef4444;"><i data-lucide="alert-circle"></i></div>
+          <div><h3>Connection Error</h3><span class="timestamp">Network / Parse Error</span></div>
+        </div>
+        <div class="card-body"><p>${escapeHtml(String(err))}</p></div>
+      </div>
+    `);
   }
 }
 
@@ -230,30 +269,43 @@ async function approvePlan() {
       body: JSON.stringify({ datasetPath: currentDatasetPath })
     });
     const json = await res.json();
-    edaPlots = json.data.plots;
+    if (!res.ok || !json.success || !json.data) {
+      appendCard(`
+        <div class="card" style="border-left: 4px solid #ef4444; background: rgba(239,68,68,0.05);">
+          <div class="card-header">
+            <div class="avatar" style="background: #ef4444;"><i data-lucide="alert-circle"></i></div>
+            <div><h3>EDA Execution Failed</h3><span class="timestamp">Sandbox Error</span></div>
+          </div>
+          <div class="card-body"><p>${escapeHtml(json.error || "Unknown error from sandbox")}</p></div>
+        </div>
+      `);
+      return;
+    }
+    edaPlots = json.data.plots || [];
     const dynamicInsights = json.data.insights || [];
+    edaInsights = dynamicInsights; // Persist for executive brief
 
     let plotsHtml = `<div class="plots-grid">
       ${edaPlots.map(p => `
         <div class="plot-item">
-          <img src="/${p.filepath}" alt="${p.filename}">
-          <small style="color: var(--text-muted); display: block; margin-top: 4px;">${p.filename}</small>
+          <img src="/${escapeHtml(p.filepath)}" alt="${escapeHtml(p.filename)}">
+          <small style="color: var(--text-muted); display: block; margin-top: 4px;">${escapeHtml(p.filename)}</small>
         </div>
       `).join("")}
     </div>`;
 
     const edaSummary = dynamicInsights.length > 0
       ? `<ul style="margin-left: 20px; font-size: 0.9rem; line-height: 1.6;">
-          ${dynamicInsights.map(ins => `<li>${ins}</li>`).join("")}
+          ${dynamicInsights.map(ins => `<li>${escapeHtml(ins)}</li>`).join("")}
         </ul>`
-      : `<p>Visual inspection completed for ${datasetMeta.totalRows} records.</p>`;
+      : `<p>Visual inspection completed for ${escapeHtml(String(datasetMeta.totalRows))} records.</p>`;
 
     appendCard(`
       <div class="card agent-card">
         <div class="card-header">
           <div class="avatar"><i data-lucide="bar-chart-2"></i></div>
           <div>
-            <h3>Exploratory Analysis Findings & Visual Proof</h3>
+            <h3>Exploratory Analysis Findings &amp; Visual Proof</h3>
             <span class="timestamp">Captured ${edaPlots.length} diagnostic charts</span>
           </div>
         </div>
@@ -268,7 +320,15 @@ async function approvePlan() {
     // Trigger Step 3 (Pushback Scenario)
     triggerPushbackScenario();
   } catch (err) {
-    console.error(err);
+    appendCard(`
+      <div class="card" style="border-left: 4px solid #ef4444; background: rgba(239,68,68,0.05);">
+        <div class="card-header">
+          <div class="avatar" style="background: #ef4444;"><i data-lucide="alert-circle"></i></div>
+          <div><h3>EDA Error</h3><span class="timestamp">Network / Parse Error</span></div>
+        </div>
+        <div class="card-body"><p>${escapeHtml(String(err))}</p></div>
+      </div>
+    `);
   }
 }
 
@@ -364,6 +424,18 @@ async function resolvePushback(choice) {
       })
     });
     const json = await res.json();
+    if (!res.ok || !json.success || !json.data) {
+      appendCard(`
+        <div class="card" style="border-left: 4px solid #ef4444; background: rgba(239,68,68,0.05);">
+          <div class="card-header">
+            <div class="avatar" style="background: #ef4444;"><i data-lucide="alert-circle"></i></div>
+            <div><h3>AutoML Benchmark Failed</h3><span class="timestamp">Error</span></div>
+          </div>
+          <div class="card-body"><p>${escapeHtml(json.error || "Unknown error from benchmark")}</p></div>
+        </div>
+      `);
+      return;
+    }
     mlResults = json.data;
 
     let tableRows = mlResults.modelsEvaluated.map(m => {
@@ -375,7 +447,7 @@ async function resolvePushback(choice) {
       return `
         <tr>
           <td>${m.rank === 1 ? '<span class="badge-rank-1">🏆 #1</span>' : `#${m.rank}`}</td>
-          <td><strong>${m.name}</strong></td>
+          <td><strong>${escapeHtml(m.name)}</strong></td>
           <td><strong>${primaryVal}</strong></td>
           <td>${accOrRmse}</td>
           <td>${precOrMae}</td>
@@ -387,8 +459,8 @@ async function resolvePushback(choice) {
     let plotsHtml = `<div class="plots-grid">
       ${mlResults.visualizations.map(p => `
         <div class="plot-item">
-          <img src="/${p.filepath}" alt="${p.filename}">
-          <small style="color: var(--text-muted); display: block; margin-top: 4px;">${p.type}</small>
+          <img src="/${escapeHtml(p.filepath)}" alt="${escapeHtml(p.filename)}">
+          <small style="color: var(--text-muted); display: block; margin-top: 4px;">${escapeHtml(p.type)}</small>
         </div>
       `).join("")}
     </div>`;
@@ -398,19 +470,19 @@ async function resolvePushback(choice) {
         <div class="card-header">
           <div class="avatar"><i data-lucide="award"></i></div>
           <div>
-            <h3>AutoML Benchmark Leaderboard & Predictive Drivers</h3>
-            <span class="timestamp">Best Model: ${mlResults.bestModel.name}</span>
+            <h3>AutoML Benchmark Leaderboard &amp; Predictive Drivers</h3>
+            <span class="timestamp">Best Model: ${escapeHtml(mlResults.bestModel.name)}</span>
           </div>
         </div>
         <div class="card-body">
-          <p>${mlResults.bestModel.businessInterpretation}</p>
+          <p>${escapeHtml(mlResults.bestModel.businessInterpretation)}</p>
           <div class="table-container">
             <table>
               <thead>
                 <tr>
                   <th>Rank</th>
                   <th>Model Algorithm</th>
-                  <th>${mlResults.bestModel.primaryMetric}</th>
+                  <th>${escapeHtml(mlResults.bestModel.primaryMetric)}</th>
                   <th>${currentTaskType === 'classification' ? 'Accuracy' : 'RMSE'}</th>
                   <th>${currentTaskType === 'classification' ? 'Precision' : 'MAE'}</th>
                   <th>${currentTaskType === 'classification' ? 'Recall' : '-'}</th>
@@ -429,7 +501,15 @@ async function resolvePushback(choice) {
     // Step 5: Generate Final Executive Brief
     generateFinalBrief();
   } catch (err) {
-    console.error(err);
+    appendCard(`
+      <div class="card" style="border-left: 4px solid #ef4444; background: rgba(239,68,68,0.05);">
+        <div class="card-header">
+          <div class="avatar" style="background: #ef4444;"><i data-lucide="alert-circle"></i></div>
+          <div><h3>AutoML Error</h3><span class="timestamp">Network / Parse Error</span></div>
+        </div>
+        <div class="card-body"><p>${escapeHtml(String(err))}</p></div>
+      </div>
+    `);
   }
 }
 
@@ -440,53 +520,51 @@ async function generateFinalBrief() {
   updateStep(5);
 
   try {
-    const isChurn = currentTaskType === "classification";
+    // Build key takeaways from actual EDA insights (calculated in sandbox) + ML results
+    // Instead of hardcoded claims, carry forward the dynamically computed edaInsights
+    const derivedTakeaways = [];
+
+    // Include EDA-derived insights (these were computed from the actual dataset in the sandbox)
+    if (edaInsights && edaInsights.length > 0) {
+      edaInsights.forEach(ins => derivedTakeaways.push(ins));
+    }
+
+    // Always include the ML model result — this is always real data
+    if (mlResults && mlResults.bestModel) {
+      const bm = mlResults.bestModel;
+      if (currentTaskType === "classification") {
+        derivedTakeaways.push(
+          `The ${bm.name} model achieved ${bm.primaryMetric} of ${bm.score}, enabling high-accuracy early identification.`
+        );
+      } else {
+        derivedTakeaways.push(
+          `The ${bm.name} forecasting model explained ${(bm.score * 100).toFixed(1)}% of revenue variance.`
+        );
+      }
+    }
+
+    // If we still have no takeaways, provide a neutral fallback
+    if (derivedTakeaways.length === 0) {
+      derivedTakeaways.push("Exploratory analysis and model benchmarking completed. See visualizations for details.");
+    }
+
+    // Build findings from top features (always data-derived)
+    const topDrivers = (mlResults.topFeatures || []).slice(0, 3).map(f => f.feature).join(", ");
+    const findingsDesc = topDrivers
+      ? `Top predictive drivers identified: ${topDrivers}. See feature importance chart for relative weights.`
+      : "Model evaluation completed. See charts for detailed results.";
+
     const briefInput = {
       businessGoal: currentGoal,
-      keyTakeaways: isChurn ? [
-        "Month-to-Month contracts represent 55% of all users but account for 78% of all churn.",
-        "Support Ticket Spike: Customers with >= 3 tickets in 90 days are 4.2x more likely to churn.",
-        `The ${mlResults.bestModel.name} model achieved ${mlResults.bestModel.primaryMetric} of ${mlResults.bestModel.score}, enabling high-accuracy early alerts.`
-      ] : [
-        "Electronics & Apparel drive over 65% of total retail sales volume.",
-        "Promotional events deliver a verified ~38.5% average revenue lift over non-promotional baselines.",
-        `The ${mlResults.bestModel.name} forecasting model explained ${(mlResults.bestModel.score * 100).toFixed(1)}% of revenue variance.`
-      ],
+      keyTakeaways: derivedTakeaways,
       findingsBySection: [
         {
-          title: isChurn ? "Contract Structure & Retention" : "Promotional Impact & Seasonality",
-          description: isChurn ? "Annual contracts reduce churn by >75% compared to month-to-month subscriptions." : "Weekend promotions in Electronics yield the highest incremental profit margin.",
+          title: "Key Predictive Drivers & Model Performance",
+          description: findingsDesc,
           charts: mlResults.visualizations.map(v => v.filepath)
         }
       ],
-      prescriptiveRecommendations: isChurn ? [
-        {
-          action: "Incentivize Annual Contracts with a 15% discount or onboarding perks.",
-          expectedImpact: "18-24% reduction in churn",
-          priority: "HIGH"
-        },
-        {
-          action: "Deploy automated CSM check-in when an account logs >= 2 tickets in 30 days.",
-          expectedImpact: "12-15% recovery of at-risk accounts",
-          priority: "HIGH"
-        },
-        {
-          action: "Introduce guided product tours for users with < 5 logins in Month 1.",
-          expectedImpact: "8% boost in 90-day retention",
-          priority: "MEDIUM"
-        }
-      ] : [
-        {
-          action: "Reallocate marketing budget towards Weekend Electronics promotions.",
-          expectedImpact: "+12-16% sales uplift",
-          priority: "HIGH"
-        },
-        {
-          action: "Optimize inventory stock levels for top categories 48 hours prior to promotional launches.",
-          expectedImpact: "Prevent 95% of out-of-stock incidents",
-          priority: "HIGH"
-        }
-      ],
+      prescriptiveRecommendations: buildRecommendations(),
       dataQualityNotes: [
         `Missing values were handled via ${currentMissingStrategy === 'drop' ? 'complete-case sub-model filtering' : 'median/mode imputation with missingness indicators'}, maintaining strict pipeline reproducibility.`
       ]
@@ -498,19 +576,31 @@ async function generateFinalBrief() {
       body: JSON.stringify(briefInput)
     });
     const json = await res.json();
+    if (!res.ok || !json.success || !json.data) {
+      appendCard(`
+        <div class="card" style="border-left: 4px solid #ef4444; background: rgba(239,68,68,0.05);">
+          <div class="card-header">
+            <div class="avatar" style="background: #ef4444;"><i data-lucide="alert-circle"></i></div>
+            <div><h3>Executive Brief Generation Failed</h3><span class="timestamp">Error</span></div>
+          </div>
+          <div class="card-body"><p>${escapeHtml(json.error || "Unknown error generating brief")}</p></div>
+        </div>
+      `);
+      return;
+    }
 
     appendCard(`
       <div class="card" style="border-left: 4px solid #10b981; background: rgba(16, 185, 129, 0.05);">
         <div class="card-header">
           <div class="avatar" style="background: #10b981;"><i data-lucide="file-text"></i></div>
           <div>
-            <h3>📊 30-Second Executive Summary & Action Matrix</h3>
-            <span class="timestamp">Report Generated: ${json.data.reportPath}</span>
+            <h3>📊 30-Second Executive Summary &amp; Action Matrix</h3>
+            <span class="timestamp">Report Generated: ${escapeHtml(json.data.reportPath)}</span>
           </div>
         </div>
         <div class="card-body">
           <ul style="margin-left: 20px; font-size: 0.95rem; line-height: 1.7;">
-            ${briefInput.keyTakeaways.map(t => `<li><strong>${t}</strong></li>`).join("")}
+            ${briefInput.keyTakeaways.map(t => `<li><strong>${escapeHtml(t)}</strong></li>`).join("")}
           </ul>
           <h4 style="margin-top: 16px; margin-bottom: 8px;">🎯 Recommended Action Matrix</h4>
           <div class="table-container">
@@ -526,15 +616,15 @@ async function generateFinalBrief() {
                 ${briefInput.prescriptiveRecommendations.map(r => `
                   <tr>
                     <td><strong>${r.priority === 'HIGH' ? '🔴 HIGH' : '🟡 MEDIUM'}</strong></td>
-                    <td>${r.action}</td>
-                    <td><span style="color: #34d399; font-weight: 600;">${r.expectedImpact}</span></td>
+                    <td>${escapeHtml(r.action)}</td>
+                    <td><span style="color: #34d399; font-weight: 600;">${escapeHtml(r.expectedImpact)}</span></td>
                   </tr>
                 `).join("")}
               </tbody>
             </table>
           </div>
           <div style="margin-top: 20px;">
-            <a href="/${json.data.reportPath}" target="_blank" class="btn btn-primary">
+            <a href="/${escapeHtml(json.data.reportPath)}" target="_blank" class="btn btn-primary">
               <i data-lucide="download"></i> Download Full Executive Report (Markdown)
             </a>
           </div>
@@ -542,6 +632,35 @@ async function generateFinalBrief() {
       </div>
     `);
   } catch (err) {
-    console.error(err);
+    appendCard(`
+      <div class="card" style="border-left: 4px solid #ef4444; background: rgba(239,68,68,0.05);">
+        <div class="card-header">
+          <div class="avatar" style="background: #ef4444;"><i data-lucide="alert-circle"></i></div>
+          <div><h3>Brief Generation Error</h3><span class="timestamp">Network / Parse Error</span></div>
+        </div>
+        <div class="card-body"><p>${escapeHtml(String(err))}</p></div>
+      </div>
+    `);
   }
+}
+
+/**
+ * Build recommendations from the top ML features rather than hardcoding domain-specific claims.
+ * Uses the top feature drivers identified by the model to generate actionable suggestions.
+ */
+function buildRecommendations() {
+  const topFeats = (mlResults && mlResults.topFeatures) ? mlResults.topFeatures.slice(0, 3) : [];
+  if (topFeats.length === 0) {
+    return [{
+      action: "Review model outputs and consult with domain experts to define targeted interventions.",
+      expectedImpact: "Data-driven decision framework established",
+      priority: "HIGH"
+    }];
+  }
+
+  return topFeats.map((f, idx) => ({
+    action: `Investigate and act on driver: "${f.feature}" (importance: ${f.importance}).`,
+    expectedImpact: `Addresses #${idx + 1} ranked predictive factor for ${escapeHtml(currentTargetColumn)}`,
+    priority: idx === 0 ? "HIGH" : "MEDIUM"
+  }));
 }

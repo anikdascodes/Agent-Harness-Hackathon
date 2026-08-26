@@ -112,9 +112,12 @@ if "contract_type" in df.columns and "churned" in df.columns:
     plt.show()
 
     m2m_rate = churn_by_contract.loc[churn_by_contract['contract_type'] == 'Month-to-Month', 'churn_rate_pct'].values
-    ann_rate = churn_by_contract.loc[churn_by_contract['contract_type'] == 'One Year', 'churn_rate_pct'].values
+    # Derive annual label dynamically — match any label containing 'one' or 'year' (case-insensitive)
+    ann_mask = churn_by_contract['contract_type'].str.contains(r'(?i)one.*year|annual|yearly|1.?year')
+    ann_rate = churn_by_contract.loc[ann_mask, 'churn_rate_pct'].values
+    ann_label = churn_by_contract.loc[ann_mask, 'contract_type'].values[0] if len(ann_rate) > 0 else 'Annual'
     if len(m2m_rate) > 0 and len(ann_rate) > 0:
-        insights.append(f"Contract Disparity: Month-to-Month accounts exhibit a {m2m_rate[0]:.1f}% churn rate, vs {ann_rate[0]:.1f}% for Annual accounts.")
+        insights.append(f"Contract Disparity: Month-to-Month accounts exhibit a {m2m_rate[0]:.1f}% churn rate, vs {ann_rate[0]:.1f}% for {ann_label} accounts.")
 
 if "support_tickets_count" in df.columns and "churned" in df.columns:
     plt.figure(figsize=(7, 4.5))
@@ -178,6 +181,12 @@ if not insights:
 print("__EDA_JSON_START__" + json.dumps(insights) + "__EDA_JSON_END__")
 `;
     const result = await runPythonInSandbox(pyScript, REPO_ROOT);
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        error: `Sandbox EDA execution failed: ${result.error || result.stderr || "Unknown error"}`
+      });
+    }
     let dynamicInsights = [];
     const match = result.stdout.match(/__EDA_JSON_START__(.*?)__EDA_JSON_END__/s);
     if (match) {
@@ -194,7 +203,9 @@ app.post("/api/benchmark-ml", async (req, res) => {
   try {
     const { datasetPath, targetColumn, taskType, missingStrategy } = req.body;
     const safePath = resolveSafeDatasetPath(datasetPath);
-    const result = await benchmarkMLModels(safePath, targetColumn, taskType, REPO_ROOT, missingStrategy || "impute");
+    const validTaskType = ["classification", "regression"].includes(taskType) ? taskType : "classification";
+    const validMissingStrategy = ["impute", "drop"].includes(missingStrategy) ? missingStrategy : "impute";
+    const result = await benchmarkMLModels(safePath, targetColumn, validTaskType, REPO_ROOT, validMissingStrategy);
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
